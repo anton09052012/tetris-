@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Мобільний Тетріс</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background-color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        canvas {
+            background-color: #000;
+            display: block;
+            margin-top: 20px;
+            border: 2px solid #fff;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 400px;
+            margin-top: 20px;
+        }
+
+        .button {
+            width: 60px;
+            height: 60px;
+            background-color: #fff;
+            color: #333;
+            font-size: 20px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            user-select: none;
+            cursor: pointer;
+        }
+
+        .button:active {
+            background-color: #ccc;
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="200" height="400"></canvas>
+    <div class="controls">
+        <div class="button" id="left">◀</div>
+        <div class="button" id="rotate">⟳</div>
+        <div class="button" id="right">▶</div>
+        <div class="button" id="down">⬇</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const COLS = 10; // Кількість колонок
+        const ROWS = 20; // Кількість рядків
+        const BLOCK_SIZE = canvas.width / COLS; // Розмір одного блоку
+
+        let board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
+        let gameOver = false;
+
+        const SHAPES = [
+            [[1, 1, 1], [0, 1, 0]], // Т-подібна
+            [[1, 1], [1, 1]],       // Квадрат
+            [[1, 1, 0], [0, 1, 1]], // Z-подібна
+            [[0, 1, 1], [1, 1, 0]], // S-подібна
+            [[1, 1, 1, 1]],          // Лінія
+            [[1, 1, 1], [1, 0, 0]], // L-подібна
+            [[1, 1, 1], [0, 0, 1]]  // J-подібна
+        ];
+
+        const COLORS = ["#000", "#FF0", "#0F0", "#00F", "#F00", "#F0F", "#0FF", "#FFF"];
+
+        let currentPiece = randomPiece();
+        let nextPiece = randomPiece();
+        let dropInterval = 1000; // Швидкість падіння
+        let lastDropTime = Date.now();
+
+        function randomPiece() {
+            const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+            return {
+                shape,
+                color: COLORS[Math.floor(Math.random() * COLORS.length)],
+                x: Math.floor(COLS / 2) - Math.floor(shape[0].length / 2),
+                y: 0
+            };
+        }
+
+        function drawBoard() {
+            ctx.fillStyle = "#000";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (board[r][c]) {
+                        ctx.fillStyle = COLORS[board[r][c]];
+                        ctx.fillRect(c * BLOCK_SIZE, r * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                        ctx.strokeStyle = "#333";
+                        ctx.strokeRect(c * BLOCK_SIZE, r * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE);
+                    }
+                }
+            }
+        }
+
+        function drawPiece(piece) {
+            piece.shape.forEach((row, r) => {
+                row.forEach((cell, c) => {
+                    if (cell) {
+                        ctx.fillStyle = piece.color;
+                        ctx.fillRect(
+                            (piece.x + c) * BLOCK_SIZE,
+                            (piece.y + r) * BLOCK_SIZE,
+                            BLOCK_SIZE,
+                            BLOCK_SIZE
+                        );
+                        ctx.strokeStyle = "#333";
+                        ctx.strokeRect(
+                            (piece.x + c) * BLOCK_SIZE,
+                            (piece.y + r) * BLOCK_SIZE,
+                            BLOCK_SIZE,
+                            BLOCK_SIZE
+                        );
+                    }
+                });
+            });
+        }
+
+        function collide(piece) {
+            for (let r = 0; r < piece.shape.length; r++) {
+                for (let c = 0; c < piece.shape[r].length; c++) {
+                    if (
+                        piece.shape[r][c] &&
+                        (board[piece.y + r] === undefined || board[piece.y + r][piece.x + c] === undefined || board[piece.y + r][piece.x + c])
+                    ) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        function merge(piece) {
+            piece.shape.forEach((row, r) => {
+                row.forEach((cell, c) => {
+                    if (cell) {
+                        board[piece.y + r][piece.x + c] = COLORS.indexOf(piece.color);
+                    }
+                });
+            });
+        }
+
+        function rotate(piece) {
+            const newShape = piece.shape[0].map((_, i) => piece.shape.map(row => row[i]).reverse());
+            const oldX = piece.x;
+            piece.x = Math.min(piece.x, COLS - newShape[0].length);
+
+            if (!collide({ ...piece, shape: newShape })) {
+                piece.shape = newShape;
+            } else {
+                piece.x = oldX;
+            }
+        }
+
+        function clearLines() {
+            board = board.filter(row => row.some(cell => !cell));
+            while (board.length < ROWS) {
+                board.unshift(Array(COLS).fill(0));
+            }
+        }
+
+        function update() {
+            if (gameOver) return;
+
+            const now = Date.now();
+            if (now - lastDropTime > dropInterval) {
+                currentPiece.y++;
+                if (collide(currentPiece)) {
+                    currentPiece.y--;
+                    merge(currentPiece);
+                    clearLines();
+                    currentPiece = nextPiece;
+                    nextPiece = randomPiece();
+                    if (collide(currentPiece)) {
+                        gameOver = true;
+                    }
+                }
+                lastDropTime = now;
+            }
+
+            drawBoard();
+            drawPiece(currentPiece);
+
+            requestAnimationFrame(update);
+        }
+
+        document.getElementById("left").addEventListener("click", () => {
+            currentPiece.x--;
+            if (collide(currentPiece)) currentPiece.x++;
+        });
+
+        document.getElementById("right").addEventListener("click", () => {
+            currentPiece.x++;
+            if (collide(currentPiece)) currentPiece.x--;
+        });
+
+        document.getElementById("rotate").addEventListener("click", () => rotate(currentPiece));
+
+        document.getElementById("down").addEventListener("click", () => {
+            currentPiece.y++;
+            if (collide(currentPiece)) currentPiece.y--;
+        });
+
+        update();
+    </script>
+</body>
+</html>
